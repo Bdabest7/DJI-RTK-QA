@@ -110,7 +110,7 @@ Works across **multiple flights** stored under the same parent folder (recursive
 
 #### DJI Photos (RTK)
 - Computes **RMSE (3D)** from standard deviations:  
-  \[ RMSE\_{3D} = \sqrt{\sigma_N^2 + \sigma_E^2 + \sigma_U^2} \] (meters), displayed in **centimeters**
+  $\mathrm{RMSE}_{3D}=\sqrt{\sigma_N^{2}+\sigma_E^{2}+\sigma_U^{2}}\ \text{(m), displayed in cm}$
 - Default bins: **≤ 3 cm**, **3–6 cm**, **≥ 6 cm** (larger + warmer symbol for larger RMSE)
 - Fields also include raw STDs (`std_n_m`, `std_e_m`, `std_u_m`), RTK flag, and status.
 
