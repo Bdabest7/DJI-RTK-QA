@@ -1,0 +1,18 @@
+[general]
+name=DJI RTK QA
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=QA DJI RTK photo sets: plots RPT route quality, styles photos by RTK RMSE, and flags abnormal windows.
+about=Reads DJI .RPT/.MRK/.XMP directly to visualize Terra-like route quality (Excellent/Good/Poor), per-photo RMSE, and RTK status. ExifTool is required for full features.
+version=1.0
+author=Brenton Roesner
+email=info@simplifly.us
+homepage=https://github.com/Bdabest7/DJI-RTK-QA
+repository=https://github.com/Bdabest7/DJI-RTK-QA
+tracker=https://github.com/Bdabest7/DJI-RTK-QA/issues
+icon=icon.png
+experimental=False
+deprecated=False
+tags=DJI,RTK,photogrammetry,quality,EXIF
+category=Vector
+license=GPL-3.0-or-later
