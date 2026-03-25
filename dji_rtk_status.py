@@ -23,10 +23,7 @@ import json
 import math
 import shutil
 import subprocess
-try:
-    from defusedxml import ElementTree as ET
-except ImportError:
-    import xml.etree.ElementTree as ET  # type: ignore[no-redef]
+from defusedxml import ElementTree as ET
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
