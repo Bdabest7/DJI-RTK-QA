@@ -23,9 +23,12 @@ import json
 import math
 import shutil
 import subprocess
-import xml.etree.ElementTree as ET
+try:
+    from defusedxml import ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET  # type: ignore[no-redef]
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 from datetime import datetime
 
@@ -59,7 +62,7 @@ from qgis.core import (
 )
 
 # For graduated rendering
-from qgis.core import QgsGraduatedSymbolRenderer, QgsRendererRange, QgsSymbol
+from qgis.core import QgsGraduatedSymbolRenderer, QgsRendererRange
 
 
 # ==============================================================================
@@ -375,7 +378,7 @@ class ExifTool:
 
         try:
             for i in range(0, len(files), chunk):
-                ch = files[i : i + chunk]
+                ch = files[i:i + chunk]
                 cmd = "\n".join(ch) + "\n-j\n-n\n-fast2\n-execute\n"
                 proc.stdin.write(cmd.encode("utf-8"))
                 proc.stdin.flush()
