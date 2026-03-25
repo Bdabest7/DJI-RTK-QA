@@ -335,7 +335,7 @@ def _find_exiftool() -> Optional[str]:
 
 
 class ExifTool:
-    """Small helper to read JSON in batches via exiftool."""
+    """Helper to read EXIF JSON via exiftool, using stay_open mode for performance."""
 
     def __init__(self, path: Optional[str] = None) -> None:
         self.path = path or _find_exiftool()
@@ -352,9 +352,63 @@ class ExifTool:
         return False
 
     def batch_read(self, files: List[str], chunk: int = EXIF_CHUNK) -> Dict[str, Dict]:
+        """
+        Read EXIF JSON for all files using stay_open mode (one Perl process for the
+        entire run instead of one per chunk).  Falls back to individual subprocess
+        calls if stay_open fails to start.
+        """
         results: Dict[str, Dict] = {}
         if not self.path or not files:
             return results
+
+        kwargs = _hide_proc_kwargs()
+        try:
+            proc = subprocess.Popen(
+                [self.path, "-stay_open", "True", "-@", "-"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **kwargs,
+            )
+        except Exception:
+            return self._batch_read_fallback(files, chunk)
+
+        try:
+            for i in range(0, len(files), chunk):
+                ch = files[i : i + chunk]
+                cmd = "\n".join(ch) + "\n-j\n-n\n-fast2\n-execute\n"
+                proc.stdin.write(cmd.encode("utf-8"))
+                proc.stdin.flush()
+
+                out_lines: List[bytes] = []
+                while True:
+                    line = proc.stdout.readline()
+                    if not line or b"{ready}" in line:
+                        break
+                    out_lines.append(line)
+
+                raw = b"".join(out_lines).strip()
+                if raw:
+                    try:
+                        arr = json.loads(raw.decode("utf-8", errors="ignore"))
+                        for j in arr:
+                            src = j.get("SourceFile") or j.get("FileName") or ""
+                            results[npath(src)] = j
+                    except Exception:
+                        pass
+        finally:
+            try:
+                proc.stdin.write(b"-stay_open\nFalse\n")
+                proc.stdin.flush()
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+        return results
+
+    def _batch_read_fallback(self, files: List[str], chunk: int = EXIF_CHUNK) -> Dict[str, Dict]:
+        """Spawn one subprocess per chunk (used when stay_open is unavailable)."""
+        results: Dict[str, Dict] = {}
         kwargs = _hide_proc_kwargs()
         for i in range(0, len(files), chunk):
             ch = files[i : i + chunk]
@@ -363,15 +417,14 @@ class ExifTool:
                     [self.path, "-j", "-n", "-fast2"] + ch,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    check=True,
                     **kwargs,
                 )
-                arr = json.loads(proc.stdout.decode("utf-8", errors="ignore"))
-                for j in arr:
-                    src = j.get("SourceFile") or j.get("FileName") or ""
-                    results[npath(src)] = j
+                if proc.stdout:
+                    arr = json.loads(proc.stdout.decode("utf-8", errors="ignore"))
+                    for j in arr:
+                        src = j.get("SourceFile") or j.get("FileName") or ""
+                        results[npath(src)] = j
             except Exception:
-                # ignore this chunk; continue
                 continue
         return results
 
@@ -625,7 +678,11 @@ def build_photo_layers(records: List[PhotoRecord]) -> Tuple[QgsVectorLayer, QgsV
         ranges.append(QgsRendererRange(lo, hi, sym, label))
 
     renderer = QgsGraduatedSymbolRenderer("rmse_3d_cm", ranges)
-    renderer.setMode(QgsGraduatedSymbolRenderer.Custom)
+    # Qt6 (QGIS 4) uses scoped enums; Qt5 (QGIS 3) uses the flat attribute.
+    try:
+        renderer.setMode(QgsGraduatedSymbolRenderer.Mode.Custom)
+    except AttributeError:
+        renderer.setMode(QgsGraduatedSymbolRenderer.Custom)
     vl.setRenderer(renderer)
 
     # --- Flight path line layer ---
@@ -651,6 +708,7 @@ def build_photo_layers(records: List[PhotoRecord]) -> Tuple[QgsVectorLayer, QgsV
     for r in records:
         groups[r.flight_id or "."].append(r)
 
+    lfeats: List[QgsFeature] = []
     for fid, recs in groups.items():
         recs = sorted(
             recs,
@@ -669,7 +727,8 @@ def build_photo_layers(records: List[PhotoRecord]) -> Tuple[QgsVectorLayer, QgsV
             feat["to"] = b.file
             feat["rtk_status"] = status
             feat["rtk_quality"] = qual
-            lpr.addFeatures([feat])
+            lfeats.append(feat)
+    lpr.addFeatures(lfeats)
 
     ll.commitChanges()
 
@@ -726,6 +785,7 @@ def build_rpt_route_layer(route_pts: List[RPTPoint], events_by_fid: Dict[str, Li
     for p in route_pts:
         groups[p.flight_id].append(p)
 
+    rfeats: List[QgsFeature] = []
     for fid, pts in groups.items():
         pts = sorted(pts, key=lambda x: (x.ts is None, x.ts or 0))
         for i in range(1, len(pts)):
@@ -746,7 +806,8 @@ def build_rpt_route_layer(route_pts: List[RPTPoint], events_by_fid: Dict[str, Li
             feat["rpt_quality"] = qual
             feat["rpt_reason"] = reason or ""
             feat["rtk_status"] = status
-            lpr.addFeatures([feat])
+            rfeats.append(feat)
+    lpr.addFeatures(rfeats)
 
     ll.commitChanges()
 
@@ -842,7 +903,7 @@ class DJIRTKStatusPlugin:
     # --- UI actions ---
     def show_settings(self):
         dlg = ExifToolSettingsDialog(self.iface.mainWindow(), current_path=self.exiftool.path)
-        if dlg.exec_() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             # Reload from settings and re-ensure
             self.exiftool.path = _settings_exiftool_path()
             self.exiftool.ensure()
